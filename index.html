@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Letter Reaction Time</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body, html {
+            height: 100%;
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: black;
+            color: white;
+        }
+        #letter {
+            font-size: 200px;
+            color: white;
+            display: none;
+        }
+        .histogram-container {
+            display: flex;
+            align-items: flex-end;
+            gap: 10px;
+            padding: 10px;
+            border: 1px solid #ccc;
+        }
+        .bar {
+            width: 20px;
+            background-color: #007bff;
+            text-align: center;
+            color: white;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div id="instructions"></div>
+    <div id="letter"></div><div id="chance"></div>
+    <div id="allResults">
+        <div id="results"></div>
+        <div id="histogram"></div>
+        <div><canvas id="speedChart" width="800" height="400"></canvas></div>
+        <div id="errors"></div>
+        <div id="misses"></div>
+    </div>
+
+    <script>
+        Math.clamp = function(value, min, max) {
+            return Math.min(Math.max(value, min), max);
+        };
+
+        const pulseDuration = 1.5 * 1000; // 1.5 seconds, convert to milliseconds
+        const visibleDuration = 0.5 * 1000; // 0.5 seconds, convert to milliseconds
+        const limitResponseTime = 1.5 * 1000;
+        const totalToShow = 200;
+        const chances = [
+            0.20, 0.50,
+            0.20, 0.10,
+            0.75, 0.20,
+            0.20, 0.05,
+            0.50, 0.20,
+        ];
+
+        const specialLetter = 'X'; // Define your special letter here
+        let lastLetter = '';
+        let escaped = false;
+        let responses = [];
+        let errors = [];
+        let misses = [];
+        let lastLetterTime = 0; // Timestamp of the last letter shown
+        let letterCount = -1;
+        let sequence = [];
+        let missTimeoutId = null;
+
+        function makeSequences()
+        {
+            function shuffleArray(array) {
+                for (let i = array.length - 1; i > 0; i--) {
+                    // Generate a random index from 0 to i (inclusive)
+                    const j = Math.floor(Math.random() * (i + 1));
+                    // Swap elements at indices i and j
+                    [array[i], array[j]] = [array[j], array[i]];
+                }
+                return array;
+            }
+
+            function getNonSpecialLetter()
+            {
+                let letter = specialLetter;
+                while(letter == specialLetter)
+                {
+                    letter = String.fromCharCode(65 + Math.floor(Math.random() * 26)); // Get random letter
+                }
+                return letter;
+            }
+
+            sequence = [];
+            for( let c=0 ; c<chances.length ; ++c)
+            {
+                let len = totalToShow/chances.length;
+                let part = new Array(len);
+                for( let i=0 ; i<len ; ++i)
+                {
+                    part[i] = i<chances[c]*len ? specialLetter : getNonSpecialLetter();
+                }
+                shuffleArray(part);
+                sequence.push(...part);
+            }
+
+        }
+
+
+        function showLetter() {
+            if(escaped)
+                return;
+
+            let letter = sequence[letterCount];
+            lastLetter = letter;
+            document.getElementById('letter').textContent = letter;
+            document.getElementById('letter').style.display = 'block';
+
+            lastLetterTime = new Date().getTime();
+
+            setTimeout(() => {
+                document.getElementById('letter').style.display = 'none';
+            }, visibleDuration);
+            if(letter === specialLetter)
+            {
+                missTimeoutId = setTimeout(() => {
+                    misses.push({letter:specialLetter, reactionTime:limitResponseTime});
+                    console.log("miss");
+                }, limitResponseTime);
+            }
+
+            letterCount++;
+        }
+
+        function runTest()
+        {
+            document.addEventListener('keydown', (event) => {
+                if (event.code === 'Space') {
+                    if(letterCount<1 || lastLetterTime==0)
+                        return;
+                    const now = new Date().getTime();
+                    
+                    const reactionTime = (now - lastLetterTime) / 1000; // Convert to seconds
+
+                    if(lastLetter !=specialLetter || reactionTime>limitResponseTime)
+                    {
+                        errors.push({letter:lastLetter, reactionTime:reactionTime});
+                        console.log("error");
+                    }
+                    else
+                    {
+                        responses.push(reactionTime);
+                        console.log(`Reaction Time: ${reactionTime} seconds`);
+                    }
+                    clearTimeout(missTimeoutId);
+                    missTimeoutId = null;
+                    lastLetterTime = 0;
+                }
+                if (event.code === 'Escape') {
+                    document.getElementById('letter').style.display = 'none';
+                    escaped = true;
+                }
+            });
+
+            return new Promise((resolve, reject) => {
+                let count = 0;
+                let intervalId = setInterval(()=>{
+                    showLetter();
+                    count += 1;
+                    if(escaped || count >= totalToShow)
+                    {
+                        console.log("Completed showing letters.");
+                        clearInterval(intervalId);
+                        resolve("test complete");
+                    }
+                }, pulseDuration);
+            });
+        }
+
+        function analyzeResponseTimes(responses, misses) {
+            let resultsDiv = document.getElementById('results');
+            if (responses.length === 0) {
+                resultsDiv.innerHTML += "No responses to analyze.";
+                return;
+            }
+
+            // Calculate the average response time
+            const sum = responses.reduce((a, b) => a + b, 0);
+            const averageResponseTime = sum / responses.length;
+
+            // Find the quickest and slowest response times
+            const quickestResponseTime = Math.min(...responses);
+            const slowestResponseTime = Math.max(...responses);
+
+            const missCount = misses.length;
+
+            // Show the results
+            resultsDiv.innerHTML += `Misses: ${missCount}<br>`;
+            resultsDiv.innerHTML += `Average Response Time: ${averageResponseTime.toFixed(2)} seconds<br>`;
+            resultsDiv.innerHTML += `Quickest Response Time: ${quickestResponseTime.toFixed(2)} seconds<br>`;
+            resultsDiv.innerHTML += `Slowest Response Time: ${slowestResponseTime.toFixed(2)} seconds<br>`;
+        }
+
+        function analyzeErrors(errors) {
+            let errorsDiv = document.getElementById('errors');
+            if (errors.length === 0) {
+                errorsDiv.innerHTML += "No errors to analyze.";
+                return;
+            }
+
+            // Calculate the total number of errors
+            const totalErrors = errors.length;
+
+            // Calculate the average error reaction time
+            const sumReactionTimes = errors.reduce((sum, error) => sum + error.reactionTime, 0);
+            const averageReactionTime = sumReactionTimes / totalErrors;
+
+            // List all errors with their letters and reaction times
+            errorsDiv.innerHTML += `Total Errors: ${totalErrors}<br>`;
+            errorsDiv.innerHTML += `Average Error Reaction Time: ${averageReactionTime.toFixed(2)} seconds<br>`;
+            errorsDiv.innerHTML += "Errors Detail:<br>";
+            errors.forEach((error, index) => {
+                errorsDiv.innerHTML += `${index + 1}. Letter: '${error.letter}', Reaction Time: ${error.reactionTime.toFixed(2)} seconds<br>`;
+            });
+        }
+
+        function generateHistogram(data, containerId) {
+            // Define the bins for the histogram
+            const binSize = 0.05; // Interval size
+            const maxResponse = limitResponseTime/1000; //Math.max(...data);
+            const bins = Math.ceil(maxResponse / binSize);
+            const container = document.getElementById(containerId);
+
+            if(bins<=0)
+            {
+                container.innerHTML = "No data for histogram.";
+                return;
+            }
+
+            const counts = new Array(bins).fill(0);
+            data.forEach(response => {
+                const index = Math.floor(response / binSize);
+                counts[index]++;
+            });
+
+            container.classList.add('histogram-container');
+
+            // Generate and append bars to the container
+            counts.forEach((count, i) => {
+                const wrapper = document.createElement('div');
+                wrapper.style.display = 'flex';
+                wrapper.style.flexDirection = 'column';
+                wrapper.style.alignItems = 'center';
+
+                const bar = document.createElement('div');
+                bar.classList.add('bar');
+                bar.style.height = `${count * 20}px`; // Example scaling factor
+                bar.title = `Responses: ${count}`; // Tooltip
+                bar.innerText = count>0 ? count : '';
+                wrapper.appendChild(bar);
+
+                const upperRange = ((i + 1) * binSize).toFixed(2);
+                const label = document.createElement('div');
+                label.innerText = upperRange;
+                label.style.marginTop = '5px'; // Spacing between bar and label
+                label.style.fontSize = '8px'; // Adjusts the font size to 12px
+                wrapper.appendChild(label);                
+
+                container.appendChild(wrapper);
+            });
+        }
+
+        function calculateRunningAverages(data, period) {
+            let runningAverages = [];
+            for (let i = period-1; i < data.length; i++) {
+                let avg = 0;
+                for(let j=0;j<period;j++)
+                {
+                    avg += data[i-j];
+                }
+                avg = avg / period;
+                runningAverages.push(avg);
+            }
+            return runningAverages;
+        }
+
+        function makeChart(chartDivId, data, label)
+        {
+            const ctx = document.getElementById(chartDivId).getContext('2d');
+            const myChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: Array.from({length: data.length}, (_, i) => i + 1), // X-axis labels as sample indices
+                    datasets: [{
+                        label: label,
+                        data: data,
+                        borderColor: 'rgb(75, 192, 192)',
+                        tension: 0.1
+                    }]
+                },
+                options: {
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 1.5 // Y-axis will run from 0.0 to 1.5
+                        }
+                    }
+                }
+            });
+        }
+
+        function displaySpecialLetterInstruction(specialLetter) {
+            return new Promise((resolve,reject)=>
+            {
+            // Display instruction text
+                let instructionDiv = document.getElementById('instructions');
+
+                instructions.innerHTML = `Hit the SPACE BAR when the letter ${specialLetter} appears.<br>To begin, hit ENTER.`;
+
+                // Listen for the Enter key press to start
+                function onKeyPress(event) {
+                    if (event.code === 'Enter') {
+                        document.removeEventListener('keydown', onKeyPress); // Remove the listener to avoid multiple triggers
+                        document.getElementById('instructions').style.display = 'none'; // Optionally hide the instruction
+                        resolve("instructions done");
+                    }
+                }
+                document.addEventListener('keydown', onKeyPress);
+            });
+        }
+
+        async function main()
+        {
+            try {
+                makeSequences();
+                console.log(sequence);
+                await displaySpecialLetterInstruction(specialLetter);
+                await runTest();
+                console.log(`Responses Array:`, responses);
+                analyzeResponseTimes(responses, misses);
+                generateHistogram(responses, 'histogram');                
+                analyzeErrors(errors);
+                let averageOverSamples = 5;
+                let averages = calculateRunningAverages(responses, averageOverSamples);
+                makeChart('speedChart', averages, 'Running Average');
+            } catch (error) {
+                console.error("An error occurred:", error); // Handle any errors that occur
+            }
+        }
+
+        main();
+
+    </script>
+</body>
+</html>
