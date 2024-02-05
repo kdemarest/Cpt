@@ -37,9 +37,15 @@
     </style>
 </head>
 <body>
-    <div id="instructions"></div>
+    <div id="testContainer">
+        <p id="testDescription">This is a five minute test of response times. Please enter your name to begin, and hit ENTER.</p>
+        <input type="text" id="nameInput" placeholder="Enter your name">
+        <div id="instructions" style="display:none;"></div>
+    </div>
+    <div id="list"></div>
     <div id="letter"></div><div id="chance"></div>
     <div id="allResults">
+        <div id="personName"></div>
         <div id="results"></div>
         <div id="histogram"></div>
         <div><canvas id="speedChart" width="800" height="400"></canvas></div>
@@ -52,6 +58,10 @@
             return Math.min(Math.max(value, min), max);
         };
 
+        const gistId = 'a4704cab68edf5aafc88e1b787cf3077'; // If you're updating an existing gist, use its ID here.
+        const token = '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'; // Secure this!
+
+        let personName = "";
         const pulseDuration = 1.5 * 1000; // 1.5 seconds, convert to milliseconds
         const visibleDuration = 0.5 * 1000; // 0.5 seconds, convert to milliseconds
         const limitResponseTime = 1.5 * 1000;
@@ -65,81 +75,92 @@
         ];
 
         const specialLetter = 'X'; // Define your special letter here
-        let lastLetter = '';
-        let escaped = false;
-        let responses = [];
-        let errors = [];
-        let misses = [];
-        let lastLetterTime = 0; // Timestamp of the last letter shown
-        let letterCount = -1;
-        let sequence = [];
-        let missTimeoutId = null;
-
-        function makeSequences()
-        {
-            function shuffleArray(array) {
-                for (let i = array.length - 1; i > 0; i--) {
-                    // Generate a random index from 0 to i (inclusive)
-                    const j = Math.floor(Math.random() * (i + 1));
-                    // Swap elements at indices i and j
-                    [array[i], array[j]] = [array[j], array[i]];
-                }
-                return array;
-            }
-
-            function getNonSpecialLetter()
-            {
-                let letter = specialLetter;
-                while(letter == specialLetter)
-                {
-                    letter = String.fromCharCode(65 + Math.floor(Math.random() * 26)); // Get random letter
-                }
-                return letter;
-            }
-
-            sequence = [];
-            for( let c=0 ; c<chances.length ; ++c)
-            {
-                let len = totalToShow/chances.length;
-                let part = new Array(len);
-                for( let i=0 ; i<len ; ++i)
-                {
-                    part[i] = i<chances[c]*len ? specialLetter : getNonSpecialLetter();
-                }
-                shuffleArray(part);
-                sequence.push(...part);
-            }
-
-        }
-
-
-        function showLetter() {
-            if(escaped || letterCount>=totalToShow)
-                return;
-
-            let letter = sequence[letterCount];
-            lastLetter = letter;
-            document.getElementById('letter').textContent = letter;
-            document.getElementById('letter').style.display = 'block';
-
-            lastLetterTime = new Date().getTime();
-
-            setTimeout(() => {
-                document.getElementById('letter').style.display = 'none';
-            }, visibleDuration);
-            if(letter === specialLetter)
-            {
-                missTimeoutId = setTimeout(() => {
-                    misses.push({letter:specialLetter, reactionTime:limitResponseTime});
-                    console.log("miss");
-                }, limitResponseTime);
-            }
-
-            letterCount++;
-        }
 
         function runTest()
         {
+            let lastLetter = '';
+            let escaped = false;
+            let overall = [];
+            let responses = [];
+            let errors = [];
+            let misses = [];
+            let lastLetterTime = 0; // Timestamp of the last letter shown
+            let letterCount = -1;
+            let sequence = [];
+            let missTimeoutId = null;
+
+            function makeSequences()
+            {
+                function shuffleArray(array) {
+                    for (let i = array.length - 1; i > 0; i--) {
+                        // Generate a random index from 0 to i (inclusive)
+                        const j = Math.floor(Math.random() * (i + 1));
+                        // Swap elements at indices i and j
+                        [array[i], array[j]] = [array[j], array[i]];
+                    }
+                    return array;
+                }
+
+                function getNonSpecialLetter()
+                {
+                    let letter = specialLetter;
+                    while(letter == specialLetter)
+                    {
+                        letter = String.fromCharCode(65 + Math.floor(Math.random() * 26)); // Get random letter
+                    }
+                    return letter;
+                }
+
+                sequence = [];
+                for( let c=0 ; c<chances.length ; ++c)
+                {
+                    let len = totalToShow/chances.length;
+                    let part = new Array(len);
+                    for( let i=0 ; i<len ; ++i)
+                    {
+                        part[i] = i<chances[c]*len ? specialLetter : getNonSpecialLetter();
+                    }
+                    shuffleArray(part);
+                    sequence.push(...part);
+                }
+
+            }
+
+
+            function showLetter() {
+                if(escaped || letterCount>=totalToShow)
+                    return;
+
+                let letter = sequence[letterCount];
+                lastLetter = letter;
+                document.getElementById('letter').textContent = letter;
+                document.getElementById('letter').style.display = 'block';
+
+                lastLetterTime = new Date().getTime();
+                overall.push({
+                    time: lastLetterTime,
+                    letter: letter,
+                    reaction: 0,
+                    status: ''
+                });
+
+                setTimeout(() => {
+                    document.getElementById('letter').style.display = 'none';
+                }, visibleDuration);
+                if(letter === specialLetter)
+                {
+                    missTimeoutId = setTimeout(() => {
+                        misses.push({letter:specialLetter, reactionTime:limitResponseTime});
+                        console.log("miss");
+                    }, limitResponseTime);
+                }
+
+                letterCount++;
+            }
+
+            makeSequences();
+            console.log(sequence);
+
             document.addEventListener('keydown', (event) => {
                 if (event.code === 'Space') {
                     if(letterCount<1 || lastLetterTime==0 || letterCount>=totalToShow)
@@ -179,10 +200,36 @@
                     {
                         console.log("Completed showing letters.");
                         clearInterval(intervalId);
-                        resolve("test complete");
+
+                        let result = {
+                            personName: personName,
+                            escaped: escaped,
+                            responses: responses,
+                            errors: errors,
+                            misses: misses,
+                            sequence: sequence,
+                            overall: overall,
+                            specs: {
+                                pulseDuration: pulseDuration,
+                                visibleDuration: visibleDuration,
+                                limitResponseTime: limitResponseTime,
+                                totalToShow: totalToShow,
+                                chances: chances
+                            }
+                        };
+
+                        resolve(result);
                     }
                 }, pulseDuration);
             });
+        }
+
+        function getAvgResponse(responses)
+        {
+            // Calculate the average response time
+            const sum = responses.reduce((a, b) => a + b, 0);
+            const averageResponseTime = sum / responses.length;
+            return averageResponseTime;
         }
 
         function analyzeResponseTimes(responses, misses) {
@@ -192,11 +239,7 @@
                 return;
             }
 
-            // Calculate the average response time
-            const sum = responses.reduce((a, b) => a + b, 0);
-            const averageResponseTime = sum / responses.length;
-
-            // Find the quickest and slowest response times
+            const averageResponseTime = getAvgResponse(responses);
             const quickestResponseTime = Math.min(...responses);
             const slowestResponseTime = Math.max(...responses);
 
@@ -207,6 +250,11 @@
             resultsDiv.innerHTML += `Average Response Time: ${averageResponseTime.toFixed(2)} seconds<br>`;
             resultsDiv.innerHTML += `Quickest Response Time: ${quickestResponseTime.toFixed(2)} seconds<br>`;
             resultsDiv.innerHTML += `Slowest Response Time: ${slowestResponseTime.toFixed(2)} seconds<br>`;
+        }
+
+        function tellPersonName(personName)
+        {
+            document.getElementById('personName').innerHTML = personName;
         }
 
         function analyzeErrors(errors) {
@@ -292,7 +340,7 @@
             return runningAverages;
         }
 
-        function makeChart(chartDivId, data, label)
+        function makeChart(chartDivId, data, label, maxY)
         {
             const ctx = document.getElementById(chartDivId).getContext('2d');
             const myChart = new Chart(ctx, {
@@ -310,47 +358,190 @@
                     scales: {
                         y: {
                             beginAtZero: true,
-                            max: 1.5 // Y-axis will run from 0.0 to 1.5
+                            max: maxY
                         }
                     }
                 }
             });
         }
 
-        function displaySpecialLetterInstruction(specialLetter) {
-            return new Promise((resolve,reject)=>
-            {
-            // Display instruction text
-                let instructionDiv = document.getElementById('instructions');
 
-                instructions.innerHTML = `Hit the SPACE BAR when the letter ${specialLetter} appears.<br>To begin, hit ENTER.`;
+        async function addDataToGist(gistId, token, personName, avgResponse, newData) {
+            // Fetch the current content of the Gist
+            const fetchResponse = await fetch(`https://api.github.com/gists/${gistId}`, {
+                headers: {
+                    'Authorization': `token ${token}`,
+                    'Accept': 'application/vnd.github.v3+json',
+                },
+            });
 
-                // Listen for the Enter key press to start
-                function onKeyPress(event) {
-                    if (event.code === 'Enter') {
-                        document.removeEventListener('keydown', onKeyPress); // Remove the listener to avoid multiple triggers
-                        document.getElementById('instructions').style.display = 'none'; // Optionally hide the instruction
-                        resolve("instructions done");
+            if (!fetchResponse.ok) {
+                console.error('Failed to fetch gist:', await fetchResponse.text());
+                return;
+            }
+
+            const gistData = await fetchResponse.json();
+            const currentContent = gistData.files['cpt.json'] ? JSON.parse(gistData.files['cpt.json'].content) : {};
+
+            // Append new data
+            const dateKey = new Date().toISOString().slice(0, 19).replace(/:/g, '-').replace('T', '-') + ' ' + personName + ' ' + Math.round(avgResponse * 1000) + "ms";
+            currentContent[dateKey] = newData;
+
+            // Update the Gist with the appended content
+            const updateResponse = await fetch(`https://api.github.com/gists/${gistId}`, {
+                method: 'PATCH',
+                headers: {
+                    'Authorization': `token ${token}`,
+                    'Accept': 'application/vnd.github.v3+json',
+                },
+                body: JSON.stringify({
+                    files: {
+                        'cpt.json': {
+                            content: JSON.stringify(currentContent)
+                        }
+                    },
+                    description: "Updated Gist for storing JSON data",
+                }),
+            });
+
+            if (updateResponse.ok) {
+                const updatedGist = await updateResponse.json();
+                console.log('Updated Gist URL:', updatedGist.html_url);
+            } else {
+                console.error('Failed to update gist:', await updateResponse.text());
+            }
+        }
+
+        async function fetchDataFromGist(gistId, token) {
+            const response = await fetch(`https://api.github.com/gists/${gistId}`, {
+                headers: {
+                    'Authorization': `token ${token}`,
+                    'Accept': 'application/vnd.github.v3+json',
+                },
+            });
+
+            if (response.ok) {
+                const gist = await response.json();
+                // Assuming the data is stored in 'cpt.json'
+                const content = gist.files['cpt.json'].content;
+                return JSON.parse(content);
+            } else {
+                console.error('Failed to fetch data from gist:', await response.text());
+                return null;
+            }
+        }
+
+        async function listItemsAndHandleClick(data, displayFn) {
+            if (data) {
+                let listDiv = document.getElementById('list');
+
+                listDiv.innerHTML = '';
+
+                // Create and append the message at the top
+                const message = document.createElement('p');
+                message.textContent = 'Select a result to show';
+                listDiv.appendChild(message);
+
+                const listContainer = document.createElement('ul');
+                listDiv.appendChild(listContainer);
+
+                Object.keys(data).forEach(key => {
+                    const listItem = document.createElement('li');
+                    listItem.textContent = key;
+                    listItem.style.cursor = 'pointer';
+                    listItem.onclick = () => {
+                        listDiv.style.display = 'none';
+                        const result = data[key];
+                        displayFn(result);
+                    };
+                    listContainer.appendChild(listItem);
+                });
+            }
+        }        
+
+        async function displaySpecialLetterInstruction(specialLetter) {
+            return new Promise((resolve, reject) => {
+                const testContainer = document.getElementById('testContainer');
+                const testDescription = document.getElementById('testDescription');
+                const nameInput = document.getElementById('nameInput');
+                const instructions = document.getElementById('instructions');
+
+                function onKeyPressStart(event) {
+                    if (event.code === 'Space') {
+                        cleanup();
+                        resolve("test");
                     }
                 }
-                document.addEventListener('keydown', onKeyPress);
+
+                function onGlobalKey(event) {
+                    if(event.code=='Backquote')
+                    {
+                        cleanup();
+                        resolve("list");
+                    }
+                }                
+
+                function onNameEnter(event) {
+                    console.log(event.code);
+                    if (event.code === 'Enter' && nameInput.value.trim() !== '') {
+                        // Display instructions after name is entered
+                        personName = nameInput.value;
+                        instructions.style.display = 'block';
+                        instructions.innerHTML = `Hello, ${personName}!<br>Hit the SPACE BAR each time the letter ${specialLetter} appears, as quickly as you can.<br>To begin, hit the space bar now.`;
+                        nameInput.style.display = 'none'; // Hide name input
+                        testDescription.style.display = 'none'; // Hide description
+
+                        // Listen for the Enter key press to start the test
+                        document.addEventListener('keydown', onKeyPressStart);
+                    }
+                }
+
+                function cleanup()
+                {
+                    nameInput.removeEventListener('keydown', onNameEnter);
+                    document.removeEventListener('keydown', onKeyPressStart);
+                    document.removeEventListener('keydown', onGlobalKey);
+                    testContainer.style.display = 'none';
+                }
+
+                document.addEventListener('keydown', onGlobalKey);
+                nameInput.addEventListener('keydown', onNameEnter);
             });
+        }
+
+        function showResult(result)
+        {
+            tellPersonName(result.personName);
+            analyzeResponseTimes(result.responses, result.misses);
+            generateHistogram(result.responses, 'histogram');                
+            analyzeErrors(result.errors);
+            let averageOverSamples = 5;
+            let averages = calculateRunningAverages(result.responses, averageOverSamples);
+            makeChart('speedChart', averages, 'Average Times', limitResponseTime/1000);
         }
 
         async function main()
         {
             try {
-                makeSequences();
-                console.log(sequence);
-                await displaySpecialLetterInstruction(specialLetter);
-                await runTest();
-                console.log(`Responses Array:`, responses);
-                analyzeResponseTimes(responses, misses);
-                generateHistogram(responses, 'histogram');                
-                analyzeErrors(errors);
-                let averageOverSamples = 5;
-                let averages = calculateRunningAverages(responses, averageOverSamples);
-                makeChart('speedChart', averages, 'Running Average');
+                let mode = await displaySpecialLetterInstruction(specialLetter);
+                if(mode=="list")
+                {
+                    const data = await fetchDataFromGist(gistId, token);
+                    await listItemsAndHandleClick(
+                        data,
+                        (result) => {
+                            showResult(result);
+                        }
+                    );
+                }
+                if(mode=="test")
+                {
+                    result = await runTest();
+                    console.log(`Result:`, result);
+                    showResult(result);
+                    let avg = getAvgResponse(result.responses);
+                    addDataToGist(gistId, token, result.personName, avg, result);
+                }
             } catch (error) {
                 console.error("An error occurred:", error); // Handle any errors that occur
             }
